@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>기억 – Memory</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: #ffffff;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+        }
+        
+        svg {
+            width: 100%;
+            height: 100%;
+        }
+    </style>
+</head>
+<body>
+    <svg id="svg" viewBox="0 0 800 600">
+        <g id="history"></g>
+        <path id="currentShape" 
+              fill="none" 
+              stroke="rgba(0, 0, 0, 0.3)" 
+              stroke-width="2"/>
+    </svg>
+
+    <script>
+        console.log('=== 기억 시작 ===');
+        
+        const svg = document.getElementById('svg');
+        const historyGroup = document.getElementById('history');
+        const currentShape = document.getElementById('currentShape');
+        
+        const centerX = 400;
+        const centerY = 300;
+        const baseRadius = 150;
+        
+        // 6개 포인트 초기화 (아메바처럼 유기적인 형태)
+        let points = [];
+        for (let i = 0; i < 6; i++) {
+            const angle = (i / 6) * Math.PI * 2 - Math.PI / 2;
+            
+            // 각 포인트마다 랜덤한 거리 (아메바 느낌)
+            const randomRadius = baseRadius * (0.85 + Math.random() * 0.3);
+            
+            points.push({
+                x: centerX + Math.cos(angle) * randomRadius,
+                y: centerY + Math.sin(angle) * randomRadius,
+                // 핸들 각도: 접선 방향 + 약간의 랜덤
+                handleAngle: angle + Math.PI / 2 + (Math.random() - 0.5) * 0.3,
+                // 핸들 길이: 부드러운 곡선을 위해 충분히 길게 + 랜덤
+                handleLength: baseRadius * (0.45 + Math.random() * 0.15)
+            });
+        }
+        
+        const history = [];
+        const maxHistory = 28;
+        let mutationCount = 0;
+        
+        const minRadius = baseRadius * 0.75;
+        const maxRadius = baseRadius * 1.25;
+        const moveRange = 12;
+        
+        // Smooth Point의 제어점 계산
+        function calculateControlPoints(point) {
+            return {
+                c1x: point.x + Math.cos(point.handleAngle + Math.PI) * point.handleLength,
+                c1y: point.y + Math.sin(point.handleAngle + Math.PI) * point.handleLength,
+                c2x: point.x + Math.cos(point.handleAngle) * point.handleLength,
+                c2y: point.y + Math.sin(point.handleAngle) * point.handleLength
+            };
+        }
+        
+        // SVG Path 생성
+        function createPath() {
+            let pathData = `M ${points[0].x} ${points[0].y}`;
+            
+            for (let i = 0; i < points.length; i++) {
+                const current = points[i];
+                const next = points[(i + 1) % points.length];
+                
+                const currentControls = calculateControlPoints(current);
+                const nextControls = calculateControlPoints(next);
+                
+                pathData += ` C ${currentControls.c2x} ${currentControls.c2y}, ${nextControls.c1x} ${nextControls.c1y}, ${next.x} ${next.y}`;
+            }
+            
+            pathData += ' Z';
+            return pathData;
+        }
+        
+        function updateShape() {
+            const pathData = createPath();
+            currentShape.setAttribute('d', pathData);
+        }
+        
+        function addToHistory() {
+            const snapshot = {
+                points: points.map(p => ({
+                    x: p.x,
+                    y: p.y,
+                    handleAngle: p.handleAngle,
+                    handleLength: p.handleLength
+                }))
+            };
+            
+            history.unshift(snapshot);
+            
+            if (history.length > maxHistory) {
+                history.pop();
+            }
+            
+            renderHistory();
+        }
+        
+        function renderHistory() {
+            historyGroup.innerHTML = '';
+            
+            for (let i = history.length - 1; i >= 0; i--) {
+                const snapshot = history[i];
+                const age = history.length - i;
+                
+                const opacity = 0.08 / (age * 0.3);
+                const strokeWidth = 2 / (age * 0.45);
+                
+                const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                
+                let pathData = `M ${snapshot.points[0].x} ${snapshot.points[0].y}`;
+                
+                for (let j = 0; j < snapshot.points.length; j++) {
+                    const current = snapshot.points[j];
+                    const next = snapshot.points[(j + 1) % snapshot.points.length];
+                    
+                    const c_c2x = current.x + Math.cos(current.handleAngle) * current.handleLength;
+                    const c_c2y = current.y + Math.sin(current.handleAngle) * current.handleLength;
+                    const n_c1x = next.x + Math.cos(next.handleAngle + Math.PI) * next.handleLength;
+                    const n_c1y = next.y + Math.sin(next.handleAngle + Math.PI) * next.handleLength;
+                    
+                    pathData += ` C ${c_c2x} ${c_c2y}, ${n_c1x} ${n_c1y}, ${next.x} ${next.y}`;
+                }
+                
+                pathData += ' Z';
+                
+                path.setAttribute('d', pathData);
+                path.setAttribute('fill', 'none');
+                path.setAttribute('stroke', 'rgba(0, 0, 0, 0.3)');
+                path.setAttribute('stroke-width', strokeWidth);
+                path.setAttribute('opacity', opacity);
+                
+                historyGroup.appendChild(path);
+            }
+        }
+        
+        function getDistanceFromCenter(x, y) {
+            return Math.sqrt(Math.pow(x - centerX, 2) + Math.pow(y - centerY, 2));
+        }
+        
+        function clampPoint(x, y) {
+            const distance = getDistanceFromCenter(x, y);
+            
+            if (distance < minRadius || distance > maxRadius) {
+                const angle = Math.atan2(y - centerY, x - centerX);
+                const clampedDistance = Math.max(minRadius, Math.min(maxRadius, distance));
+                return {
+                    x: centerX + Math.cos(angle) * clampedDistance,
+                    y: centerY + Math.sin(angle) * clampedDistance
+                };
+            }
+            
+            return { x, y };
+        }
+        
+        // 1초마다 Smooth Point 유지하며 변형
+        setInterval(() => {
+            addToHistory();
+            
+            const pointIndex = Math.floor(Math.random() * 6);
+            const point = points[pointIndex];
+            
+            // 앵커 포인트 이동
+            const newX = point.x + (Math.random() - 0.5) * moveRange * 2;
+            const newY = point.y + (Math.random() - 0.5) * moveRange * 2;
+            const clamped = clampPoint(newX, newY);
+            
+            // Smooth Point 유지
+            const newAngleToCenter = Math.atan2(clamped.y - centerY, clamped.x - centerX);
+            const targetHandleAngle = newAngleToCenter + Math.PI / 2;
+            
+            // 핸들 길이 변화
+            const newHandleLength = point.handleLength + (Math.random() - 0.5) * 6;
+            const clampedHandleLength = Math.max(35, Math.min(75, newHandleLength));
+            
+            // 애니메이션
+            const startX = point.x;
+            const startY = point.y;
+            const startAngle = point.handleAngle;
+            const startLength = point.handleLength;
+            
+            const duration = 950;
+            const startTime = Date.now();
+            
+            function animate() {
+                const elapsed = Date.now() - startTime;
+                const progress = Math.min(elapsed / duration, 1);
+                
+                const eased = progress < 0.5
+                    ? 4 * progress * progress * progress
+                    : 1 - Math.pow(-2 * progress + 2, 3) / 2;
+                
+                point.x = startX + (clamped.x - startX) * eased;
+                point.y = startY + (clamped.y - startY) * eased;
+                
+                const angleDiff = targetHandleAngle - startAngle;
+                point.handleAngle = startAngle + angleDiff * eased;
+                
+                point.handleLength = startLength + (clampedHandleLength - startLength) * eased;
+                
+                updateShape();
+                
+                if (progress < 1) {
+                    requestAnimationFrame(animate);
+                }
+            }
+            
+            animate();
+            
+            mutationCount++;
+            console.log(`기억 #${mutationCount}`);
+            
+        }, 1000);
+        
+        updateShape();
+        console.log('아메바 형태에서 시작하여 변형됩니다.');
+    </script>
+</body>
+</html>
